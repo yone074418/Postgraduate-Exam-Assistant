@@ -14,6 +14,23 @@ interface DeepSeekResponse {
 }
 
 const API_URL = 'https://api.deepseek.com/chat/completions';
+const MODEL_ID = 'deepseek-v4-flash';
+
+interface DeepSeekErrorResponse {
+  error?: {
+    message?: string;
+  };
+  message?: string;
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = (await response.json()) as DeepSeekErrorResponse;
+    return data.error?.message || data.message || response.statusText || '未知错误';
+  } catch {
+    return response.statusText || '未知错误';
+  }
+}
 
 /**
  * Sends a prompt to deepseekv4flash through a single frontend service entry.
@@ -38,22 +55,31 @@ export async function requestAiCompletion({
     },
   ];
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'deepseekv4flash',
-      messages,
-      temperature: 0.4,
-    }),
-    signal,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL_ID,
+        messages,
+        temperature: 0.4,
+        stream: false,
+      }),
+      signal,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? `：${error.message}` : '';
+    throw new Error(`无法连接 DeepSeek API${detail}。请检查网络，或确认浏览器是否允许直接访问该接口。`);
+  }
 
   if (!response.ok) {
-    throw new Error('AI 请求失败，请稍后重试');
+    const message = await readErrorMessage(response);
+    throw new Error(`AI 请求失败（${response.status}）：${message}`);
   }
 
   const data = (await response.json()) as DeepSeekResponse;
